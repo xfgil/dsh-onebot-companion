@@ -1,0 +1,56 @@
+{
+  "name": "dsh-onebot-companion",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "One DSH plugin that gives a dsh-onebot-qq channel its manners back: outbound silence guard, per-turn behaviour rules, inbound coalescing plus outbound burst delivery, and a persona layer with mood, proactive talk and style learning.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "onebot",
+    "qq",
+    "guard",
+    "prompt",
+    "rhythm",
+    "persona",
+    "mood",
+    "proactive"
+  ],
+  "license": "MIT",
+  "author": "xfgil",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "test",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "cordis.patch.yml"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xfgil/dsh-onebot-companion.git"
+  },
+  "homepage": "https://github.com/xfgil/dsh-onebot-companion#readme",
+  "bugs": {
+    "url": "https://github.com/xfgil/dsh-onebot-companion/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node test/selftest.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
