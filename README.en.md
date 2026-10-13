@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 
-**A DSH plugin** · Restores four capabilities that the 0.9.0 upgrade of [`dsh-onebot-qq`](https://www.npmjs.com/package/dsh-onebot-qq) wiped out.
+**A DSH plugin** · Restores the capabilities that the 0.9.0 upgrade of [`dsh-onebot-qq`](https://www.npmjs.com/package/dsh-onebot-qq) wiped out.
 
 **Sibling plugins**: [dsh-hot-reloader](https://github.com/xfgil/dsh-hot-reloader) ·
 [dsh-session-clock](https://github.com/xfgil/dsh-session-clock) ·
@@ -15,7 +15,7 @@
 [dsh-proxy-on-demand](https://github.com/xfgil/dsh-proxy-on-demand)
 
 > **This repository supersedes** the separate `dsh-onebot-guard` / `dsh-onebot-prompt` /
-> `dsh-onebot-rhythm` plugins (their capabilities now live in this plugin's four modules).
+> `dsh-onebot-rhythm` plugins (their capabilities now live in this plugin's five modules).
 > If you installed any of them, uninstall first — **do not run both**. Two copies would wrap
 > the same prototype chain independently, causing double bursting and double counting.
 
@@ -64,7 +64,7 @@ These capabilities were originally four separate packages. Merging them is plain
   timer, each keeps its own stats.
 - Users install one thing and configure one block instead of four.
 
-The result: **one package, one config block, one HTTP surface**, split internally into four
+The result: **one package, one config block, one HTTP surface**, split internally into five
 modules that can each be toggled independently.
 
 ## What it does
@@ -72,14 +72,15 @@ modules that can each be toggled independently.
 | Module | Does what | Attaches to |
 | --- | --- | --- |
 | `guard` | Outbound gate: blocks `[[silent]]`, strips whole-line parenthetical asides; sends nothing if the result is empty | `OutboundPipeline.prototype.sendToChat` / `sendMsg` |
-| `prompt` | Injects 5 behaviour rules + a mood line + a style line each turn | host `agent/pre-step` (no prototype) |
+| `prompt` | Injects 6 behaviour rules + a mood line + a style line each turn | host `agent/pre-step` (no prototype) |
 | `rhythm` | Inbound coalescing + outbound bursting | `ChatBridge.prototype.dispatchFollowup` / `sendToChat` |
 | `persona` | Four mood variables + randomised proactive talk + style learning | `ChatBridge.prototype.handleInbound` / `onSessionEvent` |
+| `voice` | The `qq_say` tool: text → edge-tts synthesis → sent as a QQ voice message | registers a tool only; attaches to no prototype |
 
-The four modules attach to **different** methods and coexist via module-identity tags in
+The five modules attach to **different** methods and coexist via module-identity tags in
 `core/patch.js`, so none of them swallows another.
 
-### The 5 behaviour rules
+### The 6 behaviour rules
 
 | id | Rule | Default |
 | --- | --- | --- |
@@ -88,6 +89,7 @@ The four modules attach to **different** methods and coexist via module-identity
 | `quarrel` | In a group argument, stay out of it by default — even when @-mentioned | on |
 | `face` | Use emoji well, but don't overuse them or use them instead of talking | on |
 | `tone` | Short, spoken phrasing; no documents; never expose runtime state | on |
+| `voice` | When it runs long, say it with `qq_say` — but don't overuse it | on |
 
 > `silent` is a **contract** with the `guard` module: the rule layer forbids expressing silence
 > with parentheses so that guard's detector hits 100% of the time with no residue. Change this
@@ -115,6 +117,62 @@ The four modules attach to **different** methods and coexist via module-identity
 Proactive talk has **no cron**: there are exactly two random points — the interval until the
 next evaluation is drawn from a range, and each eligible chat rolls a probability gate at
 evaluation time. It defaults to **private chats only** (speaking up in a group disturbs everyone).
+
+### Voice (`qq_say`)
+
+**The requirement behind it**: "reply in one line if you can (within 20 characters), same as in
+groups, and **when it runs long, send a voice message**" plus "**can the voice be changed? Make
+it more mature**".
+
+It provides the `qq_say` tool: given text, the plugin synthesises an mp3 with edge-tts and sends
+it as a QQ voice message. Together with rule 6, long content gets spoken.
+
+> **Why not "auto-convert anything long to speech"**: which things are worth saying aloud and
+> which are better typed is part of conversational judgement (reading out a one-line quip sounds
+> odd). Automating the swap would take that judgement away, so the plugin only offers the
+> capability and explains when to use it.
+
+Voices (default `zh-CN-XiaoxiaoNeural`, the mature one):
+
+| Voice id | Name | Character |
+| --- | --- | --- |
+| `zh-CN-XiaoxiaoNeural` | Xiaoxiao | Warm and mature (**default**) |
+| `zh-CN-XiaoyiNeural` | Xiaoyi | Lively, girlish |
+| `zh-CN-liaoning-XiaobeiNeural` | Xiaobei | North-eastern accent, forthright |
+| `zh-CN-shaanxi-XiaoniNeural` | Xiaoni | Shaanxi accent, brisk |
+| `zh-CN-YunxiNeural` | Yunxi | Bright youth |
+| `zh-CN-YunyangNeural` | Yunyang | Steady announcer |
+| `zh-CN-YunjianNeural` | Yunjian | Deep and powerful |
+
+**Requirement**: a Python with `edge-tts` installed (`pip install edge-tts`). The plugin adds
+**no Node dependency**.
+
+#### Three pitfalls already handled
+
+1. **The upstream host stopped working.** Since October 2026 `speech.platform.bing.com` answers
+   the synthesis WebSocket with **403** in many regions (upstream issue
+   [rany2/edge-tts#490](https://github.com/rany2/edge-tts/issues/490)). Measured here: 7.2.7 and
+   7.2.8 both 403, and it is **unrelated to the system clock** (manually correcting ±5s/±10s
+   still 403). The fix is [PR #491](https://github.com/rany2/edge-tts/pull/491): use
+   `api.msedgeservices.com/tts/cognitiveservices/websocket/v1` and pass the token as the
+   **`Ocp-Apim-Subscription-Key`** query parameter (not the legacy `TrustedClientToken`).
+   The plugin applies this with a **runtime shim** (an inline `python -c`), never touching
+   site-packages (pip upgrades would overwrite it — the same trap as `node_modules`). The shim
+   is idempotent: once upstream ships the fix the old host disappears and the replacement is
+   skipped.
+
+   > ⚠️ Changing only `constants.WSS_URL` **does not work** — `communicate.py` binds the value at
+   > import time via `from .constants import (... WSS_URL ...)`. Both must be patched.
+
+2. **Transient failures need retries.** The speech service is flaky: on this machine the same
+   text failed 2 of 11 consecutive attempts, then passed 12/12 in a follow-up run. The plugin
+   retries with backoff (3 attempts, 800ms base). Voice is directly user-visible — one failure
+   means she suddenly cannot speak — so retrying beats surfacing an error.
+
+3. **Proxy variables are stripped.** edge-tts talks to Microsoft directly while the host often
+   carries `HTTP(S)_PROXY` for the LLM upstream. The plugin deletes those six keys from the child
+   environment. Measured here, synthesis **also** succeeds with the proxy set, so it is not a
+   guaranteed failure — but stripping has no downside, so it stays as a defence.
 
 ## Requirements
 
@@ -254,9 +312,24 @@ dsh-onebot-companion:
     proactiveMaxPerDay: 6
     proactiveQuietStart: 1
     proactiveQuietEnd: 8
+    # "Proactive talk to me only — I am the admin." With allowAllUsers: true strangers can
+    # DM too; without a whitelist she would proactively approach strangers.
+    proactiveOnlyChats: []
+
+  voice:
+    enabled: true
+    program: python              # the interpreter with edge-tts installed (absolute path is fine)
+    voice: zh-CN-XiaoxiaoNeural  # see the voice table above
+    rate: -5%                    # speech rate (edge-tts syntax)
+    pitch: -10Hz                 # pitch
+    maxChars: 120                # characters per utterance
+    timeoutMs: 45000
+    retries: 3                   # attempts including the first
+    retryDelayMs: 800            # backoff base
+    mediaDir: ''                 # voice output dir; empty = use config.mediaDir
 ```
 
-> `packageName` / `profileDir` are propagated into all four module sections automatically —
+> `packageName` / `profileDir` are propagated into all five module sections automatically —
 > you never repeat them.
 
 ### Where state lives
@@ -266,6 +339,7 @@ dsh-onebot-companion:
 | `state.json` | This plugin's runtime state (which gates are attached, scan count, hit counts) | `$DSH_HOME/onebot-companion/` |
 | `mood-state.json` | The four mood variables (one entry per chat) | `config.persona.mediaDir` |
 | `style-state.json` | Style profiles (one entry per chat) | `config.persona.mediaDir` |
+| `media_*.mp3` | Voice files synthesised by `qq_say` | `config.voice.mediaDir` |
 
 Mood and style are **deliberately kept out of `state.json`**: `mediaDir` is where that
 historical data already lives, so rewriting or swapping the plugin inherits it instead of
@@ -281,12 +355,14 @@ Everything is **loopback only** (anything not from `127.0.0.1` gets 403).
 | GET | `/dsh-onebot-companion/hits?limit=` | Last 200 guard hits (original + cleaned text) |
 | GET | `/dsh-onebot-companion/mood` | Mood snapshot (per chat) |
 | GET | `/dsh-onebot-companion/style` | Style snapshot (per chat) |
+| GET | `/dsh-onebot-companion/voice` | Voice config, available voices, last failure reason |
 | POST | `/dsh-onebot-companion/toggle` | `{"enabled": bool}` master switch |
-| POST | `/dsh-onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona","enabled":bool}` |
+| POST | `/dsh-onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona\|voice","enabled":bool}` |
 | POST | `/dsh-onebot-companion/rule` | `{"id":"silent","enabled":false}` per-rule toggle |
 | POST | `/dsh-onebot-companion/rescan` | Re-attach immediately |
 | POST | `/dsh-onebot-companion/selftest` | Run guard's self-test (feed real text, see the verdict) |
 | POST | `/dsh-onebot-companion/burst` | `{"text":"…","maxChars":36}` preview the split |
+| POST | `/dsh-onebot-companion/say` | `{"text":"…"}` preview synthesis (writes the file, sends nothing) |
 | POST | `/dsh-onebot-companion/reset-hits` | Clear hit records and counters |
 
 ## How it works
@@ -360,6 +436,12 @@ every wrapper.
   on an idle session, so the scheduler only works while an active chat table exists.
 - **Mood variables are time-integrated**, so persisted values carry IEEE-754 float tails
   (`56` may be `55.99999722222222`). That is expected, not a bug.
+- **Voice depends on an external service.** `qq_say` shells out to Python + edge-tts, which talks
+  to a Microsoft endpoint that is unofficial and has already changed once (see the voice section).
+  When it breaks, `qq_say` returns a plain error and nothing else is affected — and `/voice`
+  shows the last failure reason.
+- **Each synthesis spawns a Python process** (a few hundred ms plus network). Calls are
+  serialised, so a burst of `qq_say` calls queues up rather than running in parallel.
 - A personal tool; compatibility with other third-party OneBot implementations is not guaranteed.
 
 ## Development
@@ -368,10 +450,10 @@ every wrapper.
 node test/selftest.mjs
 ```
 
-**220 assertions**, in three layers:
+**252 assertions**, in three layers:
 
 1. **Pure functions** — mood / style / burst / coalesce / aside / rules; no IO, no host.
-2. **Module interfaces** — the four modules' `createXxx` return values and config semantics.
+2. **Module interfaces** — the five modules' `createXxx` return values and config semantics.
 3. **Real integration** — builds a fake profile (with `dsh-onebot-qq/lib/{bridge,outbound}.js`),
    lets each module's `scan()` really `import()` and wrap the prototypes, then **really calls**
    the wrapped methods and asserts on behaviour.

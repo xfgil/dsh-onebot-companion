@@ -49,6 +49,7 @@ import {
 } from '../lib/modules/mood.js';
 import { createStyleProfile, mergeStyleSample, stylePromptLine, topParticles } from '../lib/modules/style.js';
 import { ProactiveScheduler } from '../lib/modules/proactive.js';
+import { Synthesizer, speakableText, SHIM_SOURCE, VOICES, DEFAULTS as VOICE_DEFAULTS } from '../lib/modules/voice.js';
 
 let pass = 0;
 let fail = 0;
@@ -203,10 +204,10 @@ ok(segsDrop.drop === true, 'guard: 整段沉默 → drop');
 // ─────────────────────────────────────────────────────────────────────────────
 section('rules 规则表');
 
-eq(RULES.length, 5, 'rules: 共 5 条');
+eq(RULES.length, 6, 'rules: 共 6 条');
 eq(
   RULES.map((r) => r.id),
-  ['silent', 'image', 'quarrel', 'face', 'tone'],
+  ['silent', 'image', 'quarrel', 'face', 'tone', 'voice'],
   'rules: id 顺序稳定',
 );
 ok(
@@ -217,7 +218,11 @@ ok(
   RULES.find((r) => r.id === 'silent').lines.join('').includes('[[silent]]'),
   'rules: 沉默条明写 [[silent]]',
 );
-eq(Object.keys(DEFAULT_RULES).length, 5, 'rules: DEFAULT_RULES 五项全开');
+ok(
+  RULES.find((r) => r.id === 'voice').lines.join('').includes('qq_say'),
+  'rules: 语音条点名 qq_say 工具',
+);
+eq(Object.keys(DEFAULT_RULES).length, 6, 'rules: DEFAULT_RULES 六项全开');
 
 // ─────────────────────────────────────────────────────────────────────────────
 section('prompt 模块');
@@ -237,7 +242,7 @@ eq(sessionIdOf({}), null, 'prompt: sessionIdOf 无会话 → null');
   stats.skippedNotOnebot = 0;
   stats.skippedNotFirstStep = 0;
   const p = createPrompt({ cfg: { ...createPromptDefaults() }, stats, extra: () => '情绪行' });
-  ok(p.activeRuleIds().length === 5, 'prompt: 默认 5 条全开');
+  ok(p.activeRuleIds().length === RULES.length, `prompt: 默认 ${RULES.length} 条全开`);
   eq(p.setRule('silent', false), { ok: true, id: 'silent', enabled: false }, 'prompt: setRule 关');
   eq(p.setRule('nope', true), { ok: false, reason: 'unknown rule' }, 'prompt: 未知规则被拒');
   eq(p.setRule('silent'), { ok: true, id: 'silent', enabled: true }, 'prompt: setRule 无参=翻转');
@@ -558,6 +563,106 @@ section('proactive 调度器（无 cron）');
   const s = new ProactiveScheduler({ config: { proactiveEnabled: false }, log: () => {}, setTimer: () => 1 });
   s.start();
   ok(s.running === false, 'proactive: proactiveEnabled=false 不启动');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+section('voice 语音');
+
+// speakableText：把「写给人看」的文本整理成「念给人听」的。
+eq(speakableText('你好呀', 100), '你好呀', 'voice: 普通文本原样');
+eq(speakableText('**加粗**', 100), '加粗', 'voice: 去掉 Markdown 强调');
+eq(speakableText('第一行\n第二行', 100), '第一行，第二行', 'voice: 换行变停顿（不是念「换行」）');
+eq(speakableText('```js\nconst a=1;\n```', 100), '', 'voice: 代码块整体丢掉');
+eq(speakableText('[点我](https://x.com)', 100), '点我', 'voice: 链接只留文字');
+eq(speakableText('## 标题', 100), '标题', 'voice: 去掉标题标记');
+eq(speakableText('啊'.repeat(200), 10).length, 10, 'voice: 超长按 maxChars 截断');
+eq(speakableText('   \n\n  ', 100), '', 'voice: 只有空白 → 空串');
+eq(speakableText(null, 100), '', 'voice: 非字符串 → 空串');
+eq(speakableText('一二三', 0), '一二三', 'voice: maxChars<=0 不截断');
+
+// shim 源码：必须同时改 constants 与 communicate 两处（只改前者无效，实测过）。
+ok(SHIM_SOURCE.includes('api.msedgeservices.com'), 'voice: shim 指向新 host');
+ok(SHIM_SOURCE.includes('Ocp-Apim-Subscription-Key'), 'voice: shim 用订阅密钥参数（不是 TrustedClientToken）');
+ok(SHIM_SOURCE.includes('_CM.WSS_URL'), 'voice: shim 同时改 communicate 的副本');
+ok(SHIM_SOURCE.includes('if _LEGACY in _C.WSS_URL'), 'voice: shim 幂等（上游修好后自动跳过）');
+
+// 音色表：默认音色必须在表里，且是成熟取向。
+ok(VOICES.length >= 5, 'voice: 音色表非空');
+ok(
+  VOICES.some((v) => v.id === VOICE_DEFAULTS.voice),
+  'voice: 默认音色在表内',
+);
+eq(VOICE_DEFAULTS.voice, 'zh-CN-XiaoxiaoNeural', 'voice: 默认音色是晓晓（用户要求「成熟点」）');
+
+// Synthesizer 的构造与串行语义（不真跑 python）。
+{
+  const s = new Synthesizer({ voice: 'zh-CN-XiaoxiaoNeural', maxChars: 50 });
+  eq(s.voiceId, 'zh-CN-XiaoxiaoNeural', 'voice: 音色透传');
+  eq(s.charLimit, 50, 'voice: 字数上限透传');
+  eq(s.rate, '+0%', 'voice: 非法 rate → 兜底');
+  eq(s.pitch, '+0Hz', 'voice: 非法 pitch → 兜底');
+  const s2 = new Synthesizer({ rate: '-5%', pitch: '-10Hz' });
+  eq(s2.rate, '-5%', 'voice: 合法 rate 采纳');
+  eq(s2.pitch, '-10Hz', 'voice: 合法 pitch 采纳');
+  const s3 = new Synthesizer({ rate: 'abc', pitch: '12' });
+  eq(s3.rate, '+0%', 'voice: 乱写的 rate 被拒');
+  eq(s3.pitch, '+0Hz', 'voice: 乱写的 pitch 被拒');
+  // 串行：两次 speak 必须按序跑完（用假的 speakNow 替掉真实进程调用）。
+  const order = [];
+  const s4 = new Synthesizer({ maxChars: 50 });
+  s4.speakNow = async (t) => {
+    order.push('start:' + t);
+    await sleep(20);
+    order.push('end:' + t);
+    return { path: '/x.mp3', bytes: 1, text: t, voice: 'v' };
+  };
+  await Promise.all([s4.speak('一'), s4.speak('二')]);
+  eq(order, ['start:一', 'end:一', 'start:二', 'end:二'], 'voice: 合成串行，不并发抢语音服务');
+  // 空内容在起进程之前就该被拦下。
+  let threw = null;
+  try {
+    await new Synthesizer({ maxChars: 50 }).speakNow('```\nonly code\n```');
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw !== null && threw.message.includes('没有可朗读的内容'), 'voice: 无可念内容提前报错（不起进程）');
+
+  // 偶发失败要重试：语音服务实测有瞬时抖动（同机同文本 11 次里失败 2 次，
+  // 随后复测 12/12 成功）。这里用假的 attemptOnce 模拟「前两次失败、第三次成功」。
+  // 注意 speakNow 会先 mkdir(this.dir)，所以目录必须是真实可建的。
+  const retryDir = mkdtempSync(join(tmpdir(), 'companion-voice-'));
+  {
+    let calls = 0;
+    const s5 = new Synthesizer({ maxChars: 50, retries: 3, retryDelayMs: 1 });
+    s5.dir = retryDir;
+    s5.attemptOnce = async () => {
+      calls += 1;
+      if (calls < 3) throw new Error('WSServerHandshakeError: 403');
+      return { path: '/ok.mp3', bytes: 9, text: 't', voice: 'v' };
+    };
+    const r = await s5.speakNow('测试重试');
+    eq(calls, 3, 'voice: 前两次失败后第三次成功（重试生效）');
+    eq(r.bytes, 9, 'voice: 重试成功后返回结果');
+  }
+  // 全部尝试都失败时，抛的是最后一次的错误（不是静默吞掉）。
+  {
+    let calls = 0;
+    const s6 = new Synthesizer({ maxChars: 50, retries: 3, retryDelayMs: 1 });
+    s6.dir = retryDir;
+    s6.attemptOnce = async () => {
+      calls += 1;
+      throw new Error('always fail #' + calls);
+    };
+    let err = null;
+    try {
+      await s6.speakNow('测试全失败');
+    } catch (e) {
+      err = e;
+    }
+    eq(calls, 3, 'voice: 重试次数用满即停');
+    ok(err !== null && err.message.includes('#3'), 'voice: 抛出最后一次错误');
+  }
+  rmSync(retryDir, { recursive: true, force: true });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

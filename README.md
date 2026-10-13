@@ -1,6 +1,6 @@
 # dsh-onebot-companion
 
-> 一个插件，把 QQ 通道该有的四件事都装回来：**出站沉默守卫 + 每轮行为规则 + 对话节奏 + 人设**。
+> 一个插件，把 QQ 通道该有的四件事都装回来：**出站沉默守卫 + 每轮行为规则 + 对话节奏 + 人设 + 语音**。
 >
 > 中文 · [English](./README.en.md)
 
@@ -15,7 +15,7 @@
 [dsh-proxy-on-demand](https://github.com/xfgil/dsh-proxy-on-demand)（按需代理）
 
 > **本仓库取代** `dsh-onebot-guard` / `dsh-onebot-prompt` / `dsh-onebot-rhythm` 三个独立插件
-> （它们的能力已全部并入本插件的四个模块）。已装过旧插件的请先卸载再装这个，**不要同时装**——
+> （它们的能力已全部并入本插件的五个模块）。已装过旧插件的请先卸载再装这个，**不要同时装**——
 > 两套代码会各自包装同一条原型链，导致重复分条、重复计数。
 
 ---
@@ -60,20 +60,21 @@
 - 四个包各自 `import()` 同一个 `dsh-onebot-qq`，各自起一个 3 秒扫描定时器，各自维护一份统计。
 - 用户只装一个、只配一块，比装四个再对着四份文档调参好得多。
 
-合并后：**一个包、一份配置、一个 HTTP 面**，内部按职责分成四个模块，各自可独立开关。
+合并后：**一个包、一份配置、一个 HTTP 面**，内部按职责分成五个模块，各自可独立开关。
 
 ## 它做什么
 
 | 模块 | 干什么 | 挂在哪 |
 | --- | --- | --- |
 | `guard` | 出站闸：拦 `[[silent]]`、剥整行括号旁白；整条为空就不发 | `OutboundPipeline.prototype.sendToChat` / `sendMsg` |
-| `prompt` | 每轮注入 5 条行为规则 + 情绪行 + 风格行 | 宿主 `agent/pre-step`（不挂原型） |
+| `prompt` | 每轮注入 6 条行为规则 + 情绪行 + 风格行 | 宿主 `agent/pre-step`（不挂原型） |
 | `rhythm` | 入站合并（连打三行 = 一个回合）+ 出站分段（一条长回复分几次发） | `ChatBridge.prototype.dispatchFollowup` / `sendToChat` |
 | `persona` | 情绪四变量 + 随机主动发言 + 风格学习 | `ChatBridge.prototype.handleInbound` / `onSessionEvent` |
+| `voice` | `qq_say` 工具：文字 → edge-tts 合成 → 作为 QQ 语音发出 | 只注册工具，不挂原型 |
 
-四个模块挂在**不同**的方法上，靠 `core/patch.js` 的模块身份标记共存，互不吞并。
+五个模块挂在**不同**的方法上，靠 `core/patch.js` 的模块身份标记共存，互不吞并。
 
-### 5 条行为规则
+### 6 条行为规则
 
 | id | 规则 | 默认 |
 | --- | --- | --- |
@@ -82,6 +83,7 @@
 | `quarrel` | 群里有人争执/对线时默认不接，被 @ 也可沉默 | 开 |
 | `face` | 表情善用但别滥用，别拿表情代替说话 | 开 |
 | `tone` | 短句口语、别写文档、绝不暴露运行状态 | 开 |
+| `voice` | 话一长就用 `qq_say` 说出来，但别滥用 | 开 |
 
 > `silent` 这条是与 `guard` 模块的**契约**：规则层明令禁止用括号表达沉默，只许用
 > `[[silent]]` 一个写法，这样 guard 的判别器才能 100% 命中且不留残余。改这条措辞前
@@ -108,6 +110,54 @@
 
 主动发言**没有 cron**：只有两处随机 —— 下一次评估的间隔是区间随机的，评估时每个候选
 chat 各掷一次概率门。默认只对**私聊**主动（群里主动开口是打扰所有人）。
+
+### 语音（`qq_say`）
+
+**对应需求**：「能不能回复我也尽量用一句话（尽量20字内），跟群聊一样，**长的就发语音**」+
+「**语音声音能改吗？改成熟点**」。
+
+提供 `qq_say` 工具：给一段文字，插件用 edge-tts 合成 mp3，再作为 QQ 语音消息发出去。
+配合第 6 条规则，长内容她会用说的。
+
+> **为什么不做成「超长自动转语音」**：哪些话适合说、哪些适合打字是聊天判断的一部分
+> （一句吐槽用念的很怪）。自动替换会抢走这个判断，所以只提供能力 + 讲清何时用。
+
+音色可选（默认 `zh-CN-XiaoxiaoNeural` 晓晓，成熟取向）：
+
+| 音色 id | 名字 | 风格 |
+| --- | --- | --- |
+| `zh-CN-XiaoxiaoNeural` | 晓晓 | 成熟温柔（**默认**） |
+| `zh-CN-XiaoyiNeural` | 晓伊 | 活泼少女 |
+| `zh-CN-liaoning-XiaobeiNeural` | 晓北 | 东北口音，直爽 |
+| `zh-CN-shaanxi-XiaoniNeural` | 晓妮 | 陕西口音，爽利 |
+| `zh-CN-YunxiNeural` | 云希 | 清朗少年 |
+| `zh-CN-YunyangNeural` | 云扬 | 沉稳播音腔 |
+| `zh-CN-YunjianNeural` | 云健 | 浑厚有力 |
+
+**依赖**：Python 装了 `edge-tts`（`pip install edge-tts`）。插件**不额外引入 Node 依赖**。
+
+#### 两个已踩过的坑（插件内已处理）
+
+1. **上游 host 失效**：`speech.platform.bing.com` 自 2026-10 起在很多地区对合成
+   WebSocket 直接回 **403**（上游 issue [rany2/edge-tts#490](https://github.com/rany2/edge-tts/issues/490)）。
+   本机实测 7.2.7 / 7.2.8 都 403，且**与系统时钟无关**（手动补 ±5s/±10s 偏差仍然 403）。
+   修法见 [PR #491](https://github.com/rany2/edge-tts/pull/491)：改用
+   `api.msedgeservices.com/tts/cognitiveservices/websocket/v1`，且 token 要作为
+   **`Ocp-Apim-Subscription-Key`** 查询参数传入（不是旧的 `TrustedClientToken`）。
+   插件用**运行时 shim**（内联 `python -c`）完成替换，**不改 site-packages**
+   （pip 升级会覆盖回去，与 `node_modules` 同一个坑）。shim 带幂等保护：上游发版后
+   旧 host 消失，替换自动跳过。
+
+   > ⚠️ 只改 `constants.WSS_URL` **无效** —— `communicate.py` 用
+   > `from .constants import (... WSS_URL ...)` 把值绑成了模块级常量，两处都要改。
+
+2. **偶发失败要重试**：语音服务有瞬时抖动（实测同一段文本在同一台机器上连续 11 次里
+   失败 2 次，随后单独复测 12/12 全成功）。插件内置退避重试（默认 3 次，基数 800ms）。
+   语音是用户直接看到的东西，失败一次就是「她突然说不出话」，重试比报错友好。
+
+3. **剥代理变量**：edge-tts 直连微软，而宿主环境常带 `HTTP(S)_PROXY`（给 LLM 上游用）。
+   插件从子进程环境里删掉这六个键（`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` 及其小写）。
+   实测本机带代理时**也能**成功，所以它不是必然失败项 —— 但剥掉没有副作用，作为防御保留。
 
 ## 环境要求
 
@@ -244,9 +294,24 @@ dsh-onebot-companion:
     proactiveMaxPerDay: 6
     proactiveQuietStart: 1
     proactiveQuietEnd: 8
+    # 「主动只对我，我才是管理员」——allowAllUsers: true 时陌生人也能私聊，
+    # 不设白名单她就会去主动搭话陌生人。写纯 QQ 号或完整 chatId 都认。
+    proactiveOnlyChats: []
+
+  voice:
+    enabled: true
+    program: python              # 装了 edge-tts 的解释器（可写绝对路径）
+    voice: zh-CN-XiaoxiaoNeural  # 音色，见上表
+    rate: -5%                    # 语速（edge-tts 语法）
+    pitch: -10Hz                 # 音调
+    maxChars: 120                # 每次最多念多少字
+    timeoutMs: 45000
+    retries: 3                   # 偶发失败重试次数（含首次）
+    retryDelayMs: 800            # 重试退避基数
+    mediaDir: ''                 # 语音文件目录；留空用 config.mediaDir
 ```
 
-> `packageName` / `profileDir` 会自动下发到四个模块段，**不需要在每个段里重复写**。
+> `packageName` / `profileDir` 会自动下发到五个模块段，**不需要在每个段里重复写**。
 
 ### 状态文件放在哪
 
@@ -255,6 +320,7 @@ dsh-onebot-companion:
 | `state.json` | 本插件运行态（挂了哪些闸、扫了几次、命中多少） | `$DSH_HOME/onebot-companion/` |
 | `mood-state.json` | 情绪四变量（每 chat 一条） | `config.persona.mediaDir` |
 | `style-state.json` | 风格画像（每 chat 一条） | `config.persona.mediaDir` |
+| `media_*.mp3` | `qq_say` 合成的语音 | `config.voice.mediaDir` |
 
 情绪与风格**刻意不放在 `state.json` 里**：`mediaDir` 是那批历史数据本来的家，
 换插件/重写插件都能继承，亲密度和风格画像攒了几天的东西不该因为换插件清零。
@@ -265,16 +331,18 @@ dsh-onebot-companion:
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| GET | `/dsh-onebot-companion` | 总状态：配置、统计、四个模块挂载情况 |
+| GET | `/dsh-onebot-companion` | 总状态：配置、统计、五个模块挂载情况 |
 | GET | `/dsh-onebot-companion/hits?limit=` | 最近 200 条 guard 命中（原文 + 清理后文本） |
 | GET | `/dsh-onebot-companion/mood` | 情绪快照（每 chat） |
 | GET | `/dsh-onebot-companion/style` | 风格画像快照（每 chat） |
+| GET | `/dsh-onebot-companion/voice` | 语音配置、可用音色表、上次失败原因 |
 | POST | `/dsh-onebot-companion/toggle` | `{"enabled": bool}` 总开关 |
-| POST | `/dsh-onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona","enabled":bool}` |
+| POST | `/dsh-onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona\|voice","enabled":bool}` |
 | POST | `/dsh-onebot-companion/rule` | `{"id":"silent","enabled":false}` 单条规则开关 |
 | POST | `/dsh-onebot-companion/rescan` | 立刻补挂一次 |
 | POST | `/dsh-onebot-companion/selftest` | 跑 guard 自测（喂真实文本看会怎么处理） |
 | POST | `/dsh-onebot-companion/burst` | `{"text":"…","maxChars":36}` 看分段结果 |
+| POST | `/dsh-onebot-companion/say` | `{"text":"…"}` 试合成语音（只落盘，不发送） |
 | POST | `/dsh-onebot-companion/reset-hits` | 清空命中记录与计数 |
 
 ## 工作原理
@@ -300,7 +368,7 @@ Package subpath './lib/outbound.js' is not defined by "exports"
 消失而已 —— 插件的 `pollMs` 扫描（默认 3 秒）会重新 `import()` 并检查原型上还有没有
 本模块的标记，没有就补挂。**目标包被升级换目录也不会失效。**
 
-### 脱链语义：四个模块互不吞并
+### 脱链语义：多个模块互不吞并
 
 同一个原型方法可能被多个模块包装（例如 `sendToChat` 同时被 guard 和 rhythm 关注）。
 朴素的 `unwrap()` 会剥到链底，把别的模块的包装一起丢掉。`core/patch.js` 因此给每个
@@ -337,6 +405,11 @@ Package subpath './lib/outbound.js' is not defined by "exports"
   调度器只在有活跃 chat 表时才工作。
 - **情绪变量按时间积分**，落盘值会有 IEEE-754 浮点尾差（`56` 可能是
   `55.99999722222222`）。这是正常的，不是 bug。
+- **语音依赖外部服务**：`qq_say` 起 Python + edge-tts，连的是微软一个非官方端点，
+  而且已经变过一次（见语音章节）。它坏掉时 `qq_say` 只返回一个普通错误、不影响别的
+  功能，`/voice` 端点会显示上次失败原因。
+- **每次合成都起一个 Python 进程**（几百毫秒 + 网络）。调用是串行的，所以连着几次
+  `qq_say` 会排队而不是并发。
 - 本插件为自用工具，不保证与其他第三方 OneBot 实现的兼容性。
 
 ## 开发
@@ -345,12 +418,12 @@ Package subpath './lib/outbound.js' is not defined by "exports"
 node test/selftest.mjs
 ```
 
-**220 项断言**，三层覆盖：
+**252 项断言**，三层覆盖：
 
 1. **纯函数** —— mood / style / burst / coalesce / aside / rules，无 IO、无宿主。
-2. **模块接口** —— 四个模块的 `createXxx` 返回值与配置语义。
+2. **模块接口** —— 五个模块的 `createXxx` 返回值与配置语义。
 3. **真实集成** —— 造一个假 profile（含 `dsh-onebot-qq/lib/{bridge,outbound}.js`），
-   让四个模块的 `scan()` 真的 `import()` 并给原型挂包装，然后**真的调用**被包装的
+   让五个模块的 `scan()` 真的 `import()` 并给原型挂包装，然后**真的调用**被包装的
    方法并断言行为。
 
 第 3 层是这个测试文件存在的理由：前两层全绿也可能「插件说挂好了但功能完全不生效」，
