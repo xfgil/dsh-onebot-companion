@@ -251,8 +251,20 @@ eq(sessionIdOf({}), null, 'prompt: sessionIdOf 无会话 → null');
   const next = async () => decision;
   const out = await p.preStep({ agent: { session: { id: 'onebot-private-1' } }, turn: 1, step: 1 }, next);
   ok(out.messages.length === 2, 'prompt: 首步注入一条消息');
-  ok(out.messages[1].content.includes('QQ'), 'prompt: 注入内容含规则');
-  ok(out.messages[1].content.includes('情绪行'), 'prompt: 情绪行搭车注入');
+
+  // ⚠️ 形状断言（2026-10-13 16:16 真实事故的回归锁）：
+  // 注入消息的 `content` **必须是数组**。曾经写成裸字符串，宿主对 content 调
+  // `.some()` 时整回合崩掉（`message.content.some is not a function`），
+  // 用户发的消息云玥完全没能回。自测当时没抓到，是因为下面的断言也在按字符串写
+  // （`.includes` 对数组不存在，本该报错却因为实现也是字符串而"通过"）。
+  const inj = out.messages[1];
+  ok(Array.isArray(inj.content), 'prompt: 注入消息的 content 是数组（不是字符串）');
+  eq(inj.content[0].type, 'text', 'prompt: 注入 content 首块是 text');
+  const injText = inj.content.map((b) => b.text).join('');
+  ok(injText.includes('QQ'), 'prompt: 注入内容含规则');
+  ok(injText.includes('情绪行'), 'prompt: 情绪行搭车注入');
+  eq(inj.role, 'user', 'prompt: 注入消息 role 是 user');
+  eq(inj.source.kind, 'onebot-prompt', 'prompt: 注入消息带 source 标记');
 
   const again = await p.preStep({ agent: { session: { id: 'onebot-private-1' } }, turn: 1, step: 1 }, next);
   eq(again.messages.length, 1, 'prompt: 同一轮只注入一次');
@@ -1058,8 +1070,11 @@ function makeFakeProfile() {
       async () => decision,
     );
     ok(out.messages.length === 1, '集成 persona: 情绪行随 pre-step 注入');
-    ok(out.messages[0].content.includes('心情'), '集成 persona: 注入内容含情绪');
-    ok(out.messages[0].content.includes('热情'), '集成 persona: 注入内容含热情');
+    // 同样按数组形状断言（见 prompt 段那条回归锁的说明）。
+    ok(Array.isArray(out.messages[0].content), '集成 persona: 注入 content 是数组');
+    const personaText = out.messages[0].content.map((b) => b.text).join('');
+    ok(personaText.includes('心情'), '集成 persona: 注入内容含情绪');
+    ok(personaText.includes('热情'), '集成 persona: 注入内容含热情');
 
     eq(persona.dir(), styleDir, '集成 persona: mediaDir 解析正确');
     const snap = persona.snapshot();
