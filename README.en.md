@@ -11,8 +11,7 @@
 
 **Sibling plugins**: [dsh-hot-reloader](https://github.com/xfgil/dsh-hot-reloader) ·
 [dsh-session-clock](https://github.com/xfgil/dsh-session-clock) ·
-[dsh-session-coop](https://github.com/xfgil/dsh-session-coop) ·
-[dsh-proxy-on-demand](https://github.com/xfgil/dsh-proxy-on-demand)
+[dsh-proxy-on-demand](https://github.com/xfgil/dsh-proxy-on-demand) · [dsh-second-opinion](https://github.com/xfgil/dsh-second-opinion)（第二意见）
 
 > **This repository supersedes** the separate `dsh-onebot-guard` / `dsh-onebot-prompt` /
 > `dsh-onebot-rhythm` plugins (their capabilities now live in this plugin's five modules).

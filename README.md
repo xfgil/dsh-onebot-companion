@@ -11,8 +11,7 @@
 
 **同系列**：[dsh-hot-reloader](https://github.com/xfgil/dsh-hot-reloader)（热重载）·
 [dsh-session-clock](https://github.com/xfgil/dsh-session-clock)（会话时钟）·
-[dsh-session-coop](https://github.com/xfgil/dsh-session-coop)（多会话协同）·
-[dsh-proxy-on-demand](https://github.com/xfgil/dsh-proxy-on-demand)（按需代理）
+[dsh-proxy-on-demand](https://github.com/xfgil/dsh-proxy-on-demand)（按需代理） · [dsh-second-opinion](https://github.com/xfgil/dsh-second-opinion)（第二意见）
 
 > **本仓库取代** `dsh-onebot-guard` / `dsh-onebot-prompt` / `dsh-onebot-rhythm` 三个独立插件
 > （它们的能力已全部并入本插件的五个模块）。已装过旧插件的请先卸载再装这个，**不要同时装**——
