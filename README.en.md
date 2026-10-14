@@ -237,7 +237,7 @@ No host restart is needed — hot reload picks it up. With
 ### 4. Confirm it's running
 
 ```powershell
-curl.exe http://127.0.0.1:<port>/dsh-onebot-companion
+curl.exe http://127.0.0.1:<port>/onebot-companion
 ```
 
 Or just check that the state file was written:
@@ -350,19 +350,19 @@ Everything is **loopback only** (anything not from `127.0.0.1` gets 403).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/dsh-onebot-companion` | Overall status: config, stats, module attachments |
-| GET | `/dsh-onebot-companion/hits?limit=` | Last 200 guard hits (original + cleaned text) |
-| GET | `/dsh-onebot-companion/mood` | Mood snapshot (per chat) |
-| GET | `/dsh-onebot-companion/style` | Style snapshot (per chat) |
-| GET | `/dsh-onebot-companion/voice` | Voice config, available voices, last failure reason |
-| POST | `/dsh-onebot-companion/toggle` | `{"enabled": bool}` master switch |
-| POST | `/dsh-onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona\|voice","enabled":bool}` |
-| POST | `/dsh-onebot-companion/rule` | `{"id":"silent","enabled":false}` per-rule toggle |
-| POST | `/dsh-onebot-companion/rescan` | Re-attach immediately |
-| POST | `/dsh-onebot-companion/selftest` | Run guard's self-test (feed real text, see the verdict) |
-| POST | `/dsh-onebot-companion/burst` | `{"text":"…","maxChars":36}` preview the split |
-| POST | `/dsh-onebot-companion/say` | `{"text":"…"}` preview synthesis (writes the file, sends nothing) |
-| POST | `/dsh-onebot-companion/reset-hits` | Clear hit records and counters |
+| GET | `/onebot-companion` | Overall status: config, stats, module attachments |
+| GET | `/onebot-companion/hits?limit=` | Last 200 guard hits (original + cleaned text) |
+| GET | `/onebot-companion/mood` | Mood snapshot (per chat) |
+| GET | `/onebot-companion/style` | Style snapshot (per chat) |
+| GET | `/onebot-companion/voice` | Voice config, available voices, last failure reason |
+| POST | `/onebot-companion/toggle` | `{"enabled": bool}` master switch |
+| POST | `/onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona\|voice","enabled":bool}` |
+| POST | `/onebot-companion/rule` | `{"id":"silent","enabled":false}` per-rule toggle |
+| POST | `/onebot-companion/rescan` | Re-attach immediately |
+| POST | `/onebot-companion/selftest` | Run guard's self-test (feed real text, see the verdict) |
+| POST | `/onebot-companion/burst` | `{"text":"…","maxChars":36}` preview the split |
+| POST | `/onebot-companion/say` | `{"text":"…"}` preview synthesis (writes the file, sends nothing) |
+| POST | `/onebot-companion/reset-hits` | Clear hit records and counters |
 
 ## How it works
 

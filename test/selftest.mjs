@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { createHandler } from '../lib/core/http.js';
 import { JsonStore, stateFilePath } from '../lib/core/jsonstore.js';
 import { createPatcher, auditMethods, originalOf, MODULE as MODULE_TAG } from '../lib/core/patch.js';
+import { FACE_COUNT, FACES, resolveFaceId, suggestFaces } from '../lib/modules/faces.js';
 import { createGuard, sanitizeText, sanitizeSegments } from '../lib/modules/guard.js';
 import { splitBurstChunks } from '../lib/modules/burst.js';
 import { InboundCoalescer, kindOfChatId } from '../lib/modules/coalesce.js';
@@ -204,10 +205,10 @@ ok(segsDrop.drop === true, 'guard: 整段沉默 → drop');
 // ─────────────────────────────────────────────────────────────────────────────
 section('rules 规则表');
 
-eq(RULES.length, 6, 'rules: 共 6 条');
+eq(RULES.length, 7, 'rules: 共 7 条');
 eq(
   RULES.map((r) => r.id),
-  ['silent', 'image', 'quarrel', 'face', 'tone', 'voice'],
+  ['silent', 'aside', 'image', 'quarrel', 'face', 'tone', 'voice'],
   'rules: id 顺序稳定',
 );
 ok(
@@ -222,7 +223,35 @@ ok(
   RULES.find((r) => r.id === 'voice').lines.join('').includes('qq_say'),
   'rules: 语音条点名 qq_say 工具',
 );
-eq(Object.keys(DEFAULT_RULES).length, 6, 'rules: DEFAULT_RULES 六项全开');
+eq(Object.keys(DEFAULT_RULES).length, 7, 'rules: DEFAULT_RULES 七项全开');
+ok(
+  RULES.find((r) => r.id === 'aside').lines.join('').includes('说给对方'),
+  'rules: 旁白条明写「说给对方」判据',
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+section('tools 工具 schema');
+
+// 2026-10-14 实测（QQ 会话 HTTP 400，上游 code 11129「工具定义不合规」）：
+// `qq_say` / `qq_send_face` 走的是**直接** `tools.register`（因为 profile 侧
+// 解析不到 `@deepseek-ai/dsh-tools`，用不了 `defineTool()`），所以 parameters
+// 必须**自带完整 JSON Schema 外壳** `type: 'object'`；写成 `defineTool()` 那种
+// 扁平参数映射会被原样透传给上游，触发 400。这条断言钉住这个坑。
+{
+  const src = readFileSync(new URL('../lib/index.js', import.meta.url), 'utf8');
+  const toolNames = [...src.matchAll(/name:\s*'(qq_[a-z_]+)'/g)].map((m) => m[1]);
+  eq(toolNames.sort().join(','), 'qq_say,qq_send_face', 'tools: 注册了 qq_say / qq_send_face');
+  for (const toolName of toolNames) {
+    const at = src.indexOf(`name: '${toolName}'`);
+    const seg = src.slice(at, at + 900);
+    const paramAt = seg.indexOf('parameters:');
+    ok(paramAt >= 0, `tools: ${toolName} 带 parameters`);
+    ok(
+      /type:\s*'object'/.test(seg.slice(paramAt, paramAt + 120)),
+      `tools: ${toolName} 的 parameters 自带 type:'object'（直接 register 必须完整 JSON Schema）`,
+    );
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 section('prompt 模块');
@@ -265,6 +294,14 @@ eq(sessionIdOf({}), null, 'prompt: sessionIdOf 无会话 → null');
   ok(injText.includes('情绪行'), 'prompt: 情绪行搭车注入');
   eq(inj.role, 'user', 'prompt: 注入消息 role 是 user');
   eq(inj.source.kind, 'onebot-prompt', 'prompt: 注入消息带 source 标记');
+  // ⚠️ id 断言（2026-10-13 20:30 第二条事故的回归锁）：
+  // 注入消息缺 id 时，宿主**写入不校验、读取才校验**，于是坏消息顺利落盘，
+  // 直到下次加载会话才整条炸掉（`session event at seq N lacks an identified
+  // message`），后果是整个会话永久打不开。这条断言必须存在。
+  ok(
+    typeof inj.id === 'string' && inj.id.length > 0,
+    'prompt: 注入消息带 id（缺 id 会让会话永久打不开）',
+  );
 
   const again = await p.preStep({ agent: { session: { id: 'onebot-private-1' } }, turn: 1, step: 1 }, next);
   eq(again.messages.length, 1, 'prompt: 同一轮只注入一次');
@@ -675,6 +712,77 @@ eq(VOICE_DEFAULTS.voice, 'zh-CN-XiaoxiaoNeural', 'voice: 默认音色是晓晓�
     ok(err !== null && err.message.includes('#3'), 'voice: 抛出最后一次错误');
   }
   rmSync(retryDir, { recursive: true, force: true });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+section('faces 表情表');
+
+// 2026-10-13 实测暴露：规则④点名 `qq_send_face`，但 qq 桥从没注册过这个工具
+// （会话 seq2169/2170：`Error: unknown tool "qq_send_face"`，白烧一个 step）。
+// 补工具就必须有「表情名 → OneBot face id」的映射，这一节测的就是那张表。
+
+ok(FACE_COUNT >= 300, `faces: 表里有 ${FACE_COUNT} 个表情（NapCat 全量）`);
+eq(Object.keys(FACES).length, FACE_COUNT, 'faces: FACE_COUNT 与表长度一致');
+eq(FACES['微笑'], 14, 'faces: 微笑 = 14（QQ 经典 id）');
+eq(FACES['呲牙'], 13, 'faces: 呲牙 = 13');
+eq(FACES['偷笑'], 20, 'faces: 偷笑 = 20');
+eq(FACES['笑哭'], 182, 'faces: 笑哭 = 182');
+eq(FACES['委屈'], 106, 'faces: 委屈 = 106');
+eq(FACES['害羞'], 6, 'faces: 害羞 = 6');
+eq(Object.isFrozen(FACES), true, 'faces: 表被冻结（防止运行时被改坏）');
+
+{
+  // 名字 → id
+  const r1 = resolveFaceId('笑哭');
+  eq(r1.ok, true, 'faces: 查名字命中');
+  eq(r1.id, '182', 'faces: 名字解析成字符串 id（OneBot 段要 string）');
+  eq(r1.name, '笑哭', 'faces: 回显原名字');
+  eq(r1.known, true, 'faces: 表内名字 known=true');
+
+  // 数字字符串也被当 id 认（表里查不到名字，但 id 有效）
+  const r2 = resolveFaceId('182');
+  eq(r2.ok, true, 'faces: 纯数字字符串当 id');
+  eq(r2.id, '182', 'faces: 数字字符串 id 保留');
+  eq(r2.name, '笑哭', 'faces: id 反查出名字');
+
+  // 数字类型
+  const r3 = resolveFaceId(14);
+  eq(r3.ok, true, 'faces: 数字类型也认');
+  eq(r3.id, '14', 'faces: 数字类型转成字符串');
+  eq(r3.name, '微笑', 'faces: 数字 14 反查微笑');
+
+  // 表外的 id 也放行（模型可能知道表外的 id）
+  const r4 = resolveFaceId('99999');
+  eq(r4.ok, true, 'faces: 表外 id 不拒绝（模型可能知道更多）');
+  eq(r4.known, false, 'faces: 表外 id known=false');
+
+  // 不认识的名字 → 报错 + 候选
+  // 注意别拿「狂笑」当反例 —— 它在表里（qsid 283），这个坑实测踩过一次。
+  const r5 = resolveFaceId('完全不是表情喵');
+  eq(r5.ok, false, 'faces: 不认识的名字 → 失败');
+  ok(typeof r5.error === 'string' && r5.error.includes('完全不是表情喵'), 'faces: 错误里带上原输入');
+
+  // 空 / 非法类型
+  eq(resolveFaceId('').ok, false, 'faces: 空串 → 失败');
+  eq(resolveFaceId('   ').ok, false, 'faces: 纯空白 → 失败');
+  eq(resolveFaceId(null).ok, false, 'faces: null → 失败');
+  eq(resolveFaceId(undefined).ok, false, 'faces: undefined → 失败');
+  eq(resolveFaceId({}).ok, false, 'faces: 对象 → 失败');
+  eq(resolveFaceId(-1).ok, false, 'faces: 负数 → 失败');
+  eq(resolveFaceId(1.5).ok, false, 'faces: 小数 → 失败');
+}
+
+{
+  // 候选提示：帮模型下一轮自我纠正
+  const hint = suggestFaces('完全不是表情喵');
+  ok(hint === '' || hint.includes('想找'), 'faces: 候选提示要么给建议要么留空');
+  const hint2 = suggestFaces('哭');
+  ok(hint2.includes('哭'), 'faces: 「哭」能给出含「哭」的候选');
+
+  // 空输入不给候选（避免噪声）
+  eq(suggestFaces(''), '', 'faces: 空输入 → 无候选');
+  eq(suggestFaces(null), '', 'faces: null → 无候选');
+  eq(suggestFaces(123), '', 'faces: 非字符串 → 无候选');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

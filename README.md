@@ -220,7 +220,7 @@ pnpm install
 ### 4. 确认它在跑
 
 ```powershell
-curl.exe http://127.0.0.1:<端口>/dsh-onebot-companion
+curl.exe http://127.0.0.1:<端口>/onebot-companion
 ```
 
 或者直接看状态文件有没有落盘：
@@ -330,19 +330,19 @@ dsh-onebot-companion:
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| GET | `/dsh-onebot-companion` | 总状态：配置、统计、五个模块挂载情况 |
-| GET | `/dsh-onebot-companion/hits?limit=` | 最近 200 条 guard 命中（原文 + 清理后文本） |
-| GET | `/dsh-onebot-companion/mood` | 情绪快照（每 chat） |
-| GET | `/dsh-onebot-companion/style` | 风格画像快照（每 chat） |
-| GET | `/dsh-onebot-companion/voice` | 语音配置、可用音色表、上次失败原因 |
-| POST | `/dsh-onebot-companion/toggle` | `{"enabled": bool}` 总开关 |
-| POST | `/dsh-onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona\|voice","enabled":bool}` |
-| POST | `/dsh-onebot-companion/rule` | `{"id":"silent","enabled":false}` 单条规则开关 |
-| POST | `/dsh-onebot-companion/rescan` | 立刻补挂一次 |
-| POST | `/dsh-onebot-companion/selftest` | 跑 guard 自测（喂真实文本看会怎么处理） |
-| POST | `/dsh-onebot-companion/burst` | `{"text":"…","maxChars":36}` 看分段结果 |
-| POST | `/dsh-onebot-companion/say` | `{"text":"…"}` 试合成语音（只落盘，不发送） |
-| POST | `/dsh-onebot-companion/reset-hits` | 清空命中记录与计数 |
+| GET | `/onebot-companion` | 总状态：配置、统计、五个模块挂载情况 |
+| GET | `/onebot-companion/hits?limit=` | 最近 200 条 guard 命中（原文 + 清理后文本） |
+| GET | `/onebot-companion/mood` | 情绪快照（每 chat） |
+| GET | `/onebot-companion/style` | 风格画像快照（每 chat） |
+| GET | `/onebot-companion/voice` | 语音配置、可用音色表、上次失败原因 |
+| POST | `/onebot-companion/toggle` | `{"enabled": bool}` 总开关 |
+| POST | `/onebot-companion/module` | `{"module":"guard\|prompt\|rhythm\|persona\|voice","enabled":bool}` |
+| POST | `/onebot-companion/rule` | `{"id":"silent","enabled":false}` 单条规则开关 |
+| POST | `/onebot-companion/rescan` | 立刻补挂一次 |
+| POST | `/onebot-companion/selftest` | 跑 guard 自测（喂真实文本看会怎么处理） |
+| POST | `/onebot-companion/burst` | `{"text":"…","maxChars":36}` 看分段结果 |
+| POST | `/onebot-companion/say` | `{"text":"…"}` 试合成语音（只落盘，不发送） |
+| POST | `/onebot-companion/reset-hits` | 清空命中记录与计数 |
 
 ## 工作原理
 
